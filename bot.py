@@ -1,39 +1,47 @@
 import logging
 import requests
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler,
+)
 
-IMDB_API_KEY = "TAVS_IMDB_API_KEY"
-MEOWVIE_BOT_TOKEN = "TAVS_BOT_TOKEN"
+# Твой ключ OMDb API и токен бота Telegram
+OMDB_API_KEY = "TAVS_OMDB_API_KEY"
+BOT_TOKEN = "TAVS_BOT_TOKEN"
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Emojis uz žanriem
+# Эмодзи - жанры с их названиями для OMDb
 GENRE_EMOJIS = {
     "🎭": "Drama",
     "😂": "Comedy",
     "😱": "Horror",
     "🚀": "Sci-Fi",
     "🔫": "Action",
-    "💖": "Romance"
+    "💖": "Romance",
 }
 
-# Laiks diennakts
 TIME_EMOJIS = ["🌅", "🌇", "🌃"]  # rīts, vakars, nakts
 
 user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        """Sveiki! 🎬 Es palīdzēšu atrast filmu vakaram.
-Norādi, vai Tu skaties vienatnē vai divatā.
-Izvēlies žanru un laiku, kad plāno skatīties.
-
-Vai skatīsies viens vai kopā?""",
-        reply_markup=ReplyKeyboardMarkup([["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True)
+        "Čau, esmu Meowie!🎬 Es palīdzēšu atrast filmu vakaram.\n"
+        "Norādi, vai Tu skaties vienatnē vai divatā.\n"
+        "Izvēlies žanru un laiku, kad plāno skatīties 🐾\n\n"
+        "Vai skatīsies viens vai kopā?",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CHOOSE_PEOPLE
 
@@ -41,43 +49,81 @@ async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[update.effective_chat.id] = {"people": update.message.text}
     await update.message.reply_text(
         "Kādu žanru vēlies? Izvēlies emoji:",
-        reply_markup=ReplyKeyboardMarkup([[k for k in GENRE_EMOJIS]], one_time_keyboard=True, resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup(
+            [[emoji] for emoji in GENRE_EMOJIS.keys()],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        ),
     )
     return CHOOSE_GENRE
 
 async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = update.message.text
-    genre = GENRE_EMOJIS.get(emoji, "Drama")
+    genre = GENRE_EMOJIS.get(emoji)
+    if not genre:
+        await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
+        return CHOOSE_GENRE
+
     user_data[update.effective_chat.id]["genre"] = genre
     await update.message.reply_text(
         "Cikos skatīsieties filmu? 🌅 - rīts, 🌇 - vakars, 🌃 - nakts",
-        reply_markup=ReplyKeyboardMarkup([[e] for e in TIME_EMOJIS], one_time_keyboard=True, resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup(
+            [[e] for e in TIME_EMOJIS], one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CHOOSE_TIME
 
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_chat.id]["time"] = update.message.text
-    genre = user_data[update.effective_chat.id]["genre"]
+    user_id = update.effective_chat.id
+    user_data[user_id]["time"] = update.message.text
+    genre = user_data[user_id]["genre"]
 
-    imdb_url = f"https://imdb-api.com/API/AdvancedSearch/{IMDB_API_KEY}?genres={genre.lower()}&sort=user_rating,desc"
+    # Поиск фильма по жанру через OMDb (поиск по жанру в OMDb нет, но можно искать по названию жанра)
+    # Здесь сделаем запрос с ключевым словом жанра, типа "Drama" и типа "movie"
     try:
-        response = requests.get(imdb_url)
+        params = {
+            "apikey": OMDB_API_KEY,
+            "type": "movie",
+            "s": genre,  # поиск по жанру как ключевому слову
+        }
+        response = requests.get("http://www.omdbapi.com/", params=params)
+        response.raise_for_status()
         data = response.json()
-        results = data.get("results", [])
-        if not results:
-            await update.message.reply_text("Neizdevās atrast filmu. Pamēģini vēlreiz!")
-        else:
-            top = results[0]
-            title = top.get("title", "Filma")
-            link = top.get("link", "")
-            description = top.get("plot", "")
-            await update.message.reply_text(f"🎬 [{title}]({link})
 
-{description}", parse_mode="Markdown")
+        if data.get("Response") == "False" or "Search" not in data:
+            await update.message.reply_text(
+                "Neizdevās atrast filmu ar šo žanru. Pamēģini vēlreiz!"
+            )
+            return ConversationHandler.END
+
+        # Возьмем случайный фильм из результатов (можно улучшить с фильтрами)
+        import random
+
+        film = random.choice(data["Search"])
+        imdb_id = film.get("imdbID")
+
+        # Получим детали фильма для описания и жанра
+        details_params = {"apikey": OMDB_API_KEY, "i": imdb_id, "plot": "short"}
+        details_resp = requests.get("http://www.omdbapi.com/", params=details_params)
+        details_resp.raise_for_status()
+        details = details_resp.json()
+
+        title = details.get("Title", "Filma")
+        imdb_url = f"https://www.imdb.com/title/{imdb_id}/"
+        genres = details.get("Genre", "Nav pieejams")
+        plot = details.get("Plot", "Apraksts nav pieejams.")
+
+        reply_text = (
+            f"🎬 *[{title}]({imdb_url})*\n"
+            f"Žanri: {genres}\n\n"
+            f"{plot}"
+        )
+        await update.message.reply_text(reply_text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Kļūda: {e}")
-        await update.message.reply_text("Neizdevās iegūt filmu. Pamēģini vēlāk.")
-
+        await update.message.reply_text(
+            "Neizdevās iegūt filmu. Pamēģini vēlāk."
+        )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,6 +144,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    print("Bot ir gatavs darbam!")
     app.run_polling()
 
 if __name__ == "__main__":
