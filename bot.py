@@ -28,9 +28,11 @@ user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Sveiki! 🎬 Es palīdzēšu atrast filmu vakaram.
+        """Sveiki! 🎬 Es palīdzēšu atrast filmu vakaram.
+Norādi, vai Tu skaties vienatnē vai divatā.
+Izvēlies žanru un laiku, kad plāno skatīties.
 
-Vai skatīsies viens vai kopā?",
+Vai skatīsies viens vai kopā?""",
         reply_markup=ReplyKeyboardMarkup([["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True)
     )
     return CHOOSE_PEOPLE
