@@ -12,7 +12,7 @@
 
 ## 🛠️ Tehnoloģijas
 - python-telegram-bot
-- IMDb scraping / TMDB (plānots)
+- IMDb scraping
 - BeautifulSoup, requests
 
 ## Instalēšana
