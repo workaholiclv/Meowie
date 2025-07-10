@@ -10,10 +10,6 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-# Твой ключ OMDb API и токен бота Telegram
-OMDB_API_KEY = "TAVS_OMDB_API_KEY"
-BOT_TOKEN = "TAVS_BOT_TOKEN"
-
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
 logging.basicConfig(level=logging.INFO)
