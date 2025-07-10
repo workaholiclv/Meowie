@@ -17,7 +17,7 @@
 
 ## Instalēšana
 ```bash
-git clone https://github.com/tavs-lietotajvards/meowie.git
+git clone https://github.com/workaholiclv/meowie.git
 cd meowie
 pip install -r requirements.txt
 python bot.py
