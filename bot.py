@@ -1,7 +1,5 @@
 import logging
 import os
-import random
-import requests
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -12,11 +10,11 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
+from trakt_recommendation import get_random_movie_by_genre
 
 load_dotenv()
 
 MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
-OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
@@ -32,35 +30,33 @@ GENRE_EMOJIS = {
     "💖": "romance",
 }
 
-TIME_EMOJIS = {
-    "🌅": "rīts",
-    "🌇": "vakars",
-    "🌃": "nakts",
-}
+TIME_EMOJIS = ["🌅", "🌇", "🌃"]
 
 user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Čau, esmu Meowie! 🎬 Palīdzēšu atrast filmu vakaram.\n"
-        "Norādi, vai Tu skaties viens vai kopā:",
+        "Čau, esmu Meowie!🎬 Es palīdzēšu atrast filmu vakaram.
+"
+        "Norādi, vai Tu skaties vienatnē vai divatā.
+"
+        "Izvēlies žanru un laiku, kad plāno skatīties 🐾
+
+"
+        "Vai skatīsies viens vai kopā?",
         reply_markup=ReplyKeyboardMarkup(
-            [["Viens", "Kopā"]],
-            one_time_keyboard=True,
-            resize_keyboard=True
-        )
+            [["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CHOOSE_PEOPLE
 
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[update.effective_chat.id] = {"people": update.message.text}
     await update.message.reply_text(
-        "Izvēlies filmu žanru:",
+        "Kādu žanru vēlies? Izvēlies:",
         reply_markup=ReplyKeyboardMarkup(
-            [[e for e in GENRE_EMOJIS.keys()]],
-            one_time_keyboard=True,
-            resize_keyboard=True
-        )
+            [[e for e in GENRE_EMOJIS.keys()]], one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CHOOSE_GENRE
 
@@ -68,60 +64,51 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = update.message.text
     genre = GENRE_EMOJIS.get(emoji)
     if not genre:
-        await update.message.reply_text("Lūdzu, izvēlies no saraksta.")
+        await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
         return CHOOSE_GENRE
 
     user_data[update.effective_chat.id]["genre"] = genre
     await update.message.reply_text(
-        "Kad plāno skatīties filmu?",
+        "Cikos skatīsieties filmu?",
         reply_markup=ReplyKeyboardMarkup(
-            [[e for e in TIME_EMOJIS.keys()]],
-            one_time_keyboard=True,
-            resize_keyboard=True
-        )
+            [[e] for e in TIME_EMOJIS], one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CHOOSE_TIME
 
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_chat.id
-    user_data[user_id]["time"] = TIME_EMOJIS.get(update.message.text, "—")
+    user_data[user_id]["time"] = update.message.text
     genre = user_data[user_id]["genre"]
+    people = user_data[user_id]["people"]
 
     try:
-        headers = {
-            "Content-Type": "application/json",
-            "trakt-api-key": TRAKT_CLIENT_ID,
-            "trakt-api-version": "2"
-        }
-        url = f"https://api.trakt.tv/movies/popular?genres={genre}&limit=10"
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        movies = response.json()
+        movie = get_random_movie_by_genre(genre, people)
 
-        if not movies:
-            await update.message.reply_text("Neizdevās atrast filmu ar šo žanru.")
+        if not movie:
+            await update.message.reply_text("Neizdevās atrast filmu. Pamēģini vēlāk.")
             return ConversationHandler.END
 
-        movie = random.choice(movies)
-        title = movie.get("title", "Filma")
-        year = movie.get("year", "")
-        trakt_url = f"https://trakt.tv/movies/{movie.get('ids', {}).get('slug', '')}"
+        reply_text = (
+            f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})
+"
+            f"Žanri: {movie['genres']}
 
-        await update.message.reply_text(
-            f"🎬 *[{title} ({year})]({trakt_url})*",
-            parse_mode="Markdown"
+"
+            f"{movie['overview']}"
         )
+        await update.message.reply_text(reply_text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Kļūda: {e}")
         await update.message.reply_text("Neizdevās iegūt filmu. Pamēģini vēlāk.")
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Meklēšana atcelta.")
+    await update.message.reply_text("Filmas meklēšana atcelta.")
     return ConversationHandler.END
 
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(MEOWVIE_BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -134,6 +121,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    print("Meowie ieskrējis čatā!")
     app.run_polling()
 
 if __name__ == "__main__":
