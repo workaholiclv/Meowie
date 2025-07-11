@@ -54,10 +54,10 @@ async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Kādu žanru vēlies? Izvēlies emoji:",
         reply_markup=ReplyKeyboardMarkup(
-            [[emoji] for emoji in GENRE_EMOJIS.keys()],
+            [list(GENRE_EMOJIS.keys())],  # Vai arī: [[emoji] for emoji in GENRE_EMOJIS.keys()]
             one_time_keyboard=True,
-            resize_keyboard=True,
-        ),
+            resize_keyboard=True
+        )
     )
     return CHOOSE_GENRE
 
