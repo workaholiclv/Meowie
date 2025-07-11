@@ -1,5 +1,8 @@
 import logging
 import requests
+from dotenv import load_dotenv
+import os
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,6 +12,11 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
+
+load_dotenv()
+
+MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
+OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
