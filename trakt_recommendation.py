@@ -1,39 +1,38 @@
-import requests
-import random
-import logging
 import os
+import httpx
+import logging
 
 logger = logging.getLogger(__name__)
 
 TRAKT_CLIENT_ID = os.getenv("TRAKT_CLIENT_ID")
 
 def get_random_movie_by_genre(genre, people):
+    url = f"https://api.trakt.tv/movies/popular?genres={genre}&limit=50&extended=full"
+
     headers = {
         "Content-Type": "application/json",
         "trakt-api-version": "2",
-        "trakt-api-key": TRAKT_CLIENT_ID,
+        "trakt-api-key": TRAKT_CLIENT_ID
     }
+
     try:
-        url = "https://api.trakt.tv/movies/popular"
-        params = {
-            "genres": genre,
-            "limit": 50,
-            "extended": "full"
-        }
-        response = requests.get(url, headers=headers, params=params)
+        response = httpx.get(url, headers=headers)
         response.raise_for_status()
         movies = response.json()
+
+        # тут выбираем фильм, форматируем и возвращаем
         if not movies:
             return None
-        movie = random.choice(movies)
 
+        chosen = random.choice(movies)
         return {
-            "title": movie.get("title", "Nav nosaukuma"),
-            "year": movie.get("year", ""),
-            "genres": ", ".join(movie.get("genres", [])) if movie.get("genres") else "Nav žanru",
-            "overview": movie.get("overview", "Apraksts nav pieejams."),
-            "trakt_url": f"https://trakt.tv/movies/{movie.get('ids', {}).get('slug', '')}"
+            "title": chosen.get("title"),
+            "year": chosen.get("year"),
+            "overview": chosen.get("overview", ""),
+            "genres": genre,
+            "trakt_url": f"https://trakt.tv/movies/{chosen.get('ids', {}).get('slug', '')}"
         }
+
     except Exception as e:
         logger.error(f"Kļūda trakt API: {e}")
         return None
