@@ -1,36 +1,45 @@
 import os
-import httpx
+import random
 import logging
+import httpx
+from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
+load_dotenv()
+
+logger = logging.getLogger("trakt_recommendation")
 
 TRAKT_CLIENT_ID = os.getenv("TRAKT_CLIENT_ID")
 
-def get_random_movie_by_genre(genre, people):
-    url = f"https://api.trakt.tv/movies/popular?genres={genre}&limit=50&extended=full"
+if not TRAKT_CLIENT_ID:
+    raise ValueError("TRAKT_CLIENT_ID nav definēts .env failā")
 
-    headers = {
-        "Content-Type": "application/json",
-        "trakt-api-version": "2",
-        "trakt-api-key": TRAKT_CLIENT_ID
-    }
+HEADERS = {
+    "Content-Type": "application/json",
+    "trakt-api-version": "2",
+    "trakt-api-key": TRAKT_CLIENT_ID,
+}
 
+def get_random_movie_by_genre(genre, people_type="Viens"):
     try:
-        response = httpx.get(url, headers=headers)
+        url = f"https://api.trakt.tv/movies/popular?genres={genre}&limit=50&extended=full"
+        response = httpx.get(url, headers=HEADERS)
         response.raise_for_status()
-        movies = response.json()
 
-        # тут выбираем фильм, форматируем и возвращаем
+        movies = response.json()
         if not movies:
             return None
 
-        chosen = random.choice(movies)
+        movie = random.choice(movies)
+
+        trakt_url = f"https://trakt.tv/movies/{movie['ids']['slug']}"
+        genres = ', '.join(movie.get("genres", [])) or genre.capitalize()
+
         return {
-            "title": chosen.get("title"),
-            "year": chosen.get("year"),
-            "overview": chosen.get("overview", ""),
-            "genres": genre,
-            "trakt_url": f"https://trakt.tv/movies/{chosen.get('ids', {}).get('slug', '')}"
+            "title": movie.get("title"),
+            "year": movie.get("year"),
+            "genres": genres,
+            "overview": movie.get("overview", "Apraksts nav pieejams."),
+            "trakt_url": trakt_url,
         }
 
     except Exception as e:
