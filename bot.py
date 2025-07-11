@@ -127,7 +127,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(MEOWVIE_BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -140,7 +140,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
-    print("Bot ir gatavs darbam!")
+    print("Meowie ieskrējis čatā!")
     app.run_polling()
 
 if __name__ == "__main__":
