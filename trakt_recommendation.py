@@ -1,13 +1,8 @@
 import os
-import random
 import logging
 import httpx
 
 logger = logging.getLogger("trakt_recommendation")
-
-MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
-if not MEOWVIE_BOT_TOKEN:
-    raise ValueError("MEOWVIE_BOT_TOKEN nav definēts Railway vidē")
 
 TRAKT_CLIENT_ID = os.getenv("TRAKT_CLIENT_ID")
 if not TRAKT_CLIENT_ID:
