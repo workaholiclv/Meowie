@@ -36,19 +36,17 @@ user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Čau, esmu Meowie!🎬 Es palīdzēšu atrast filmu vakaram.
-"
-        "Norādi, vai Tu skaties vienatnē vai divatā.
-"
-        "Izvēlies žanru un laiku, kad plāno skatīties 🐾
-
-"
+        "Čau, esmu Meowie!🎬\n"
+        "Es palīdzēšu atrast filmu vakaram.\n"
+        "Norādi, vai Tu skaties vienatnē vai divatā.\n"
+        "Izvēlies žanru un laiku, kad plāno skatīties 🐾\n\n"
         "Vai skatīsies viens vai kopā?",
         reply_markup=ReplyKeyboardMarkup(
             [["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True
         ),
     )
     return CHOOSE_PEOPLE
+
 
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[update.effective_chat.id] = {"people": update.message.text}
