@@ -2,6 +2,16 @@ import logging
 import os
 import random
 import requests
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 from dotenv import load_dotenv
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -39,19 +49,21 @@ user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Čau, esmu Meowie!🎬 Es palīdzēšu atrast filmu vakaram.\n"
-        "Norādi, vai Tu skaties vienatnē vai divatā.\n"
-        "Izvēlies žanru un laiku, kad plāno skatīties 🐾\n\n"
+        "Čau, esmu Meowie! 🎬 Es palīdzēšu atrast filmu vakaram.\n"
+        "Norādi, vai Tu skaties vienatnē vai divatā.\n\n"
         "Vai skatīsies viens vai kopā?",
         reply_markup=ReplyKeyboardMarkup(
-            [["Viens", "Kopā"]], one_time_keyboard=True, resize_keyboard=True
+            [["Viens"], ["Kopā"]],  # кнопки в столбик по одной
+            one_time_keyboard=True,
+            resize_keyboard=True,
         ),
     )
     return CHOOSE_PEOPLE
 
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[update.effective_chat.id] = {"people": update.message.text}
-    keyboard = [[emoji] for emoji in GENRE_EMOJIS.keys()]
+    keyboard = [[emoji] for emoji in GENRE_EMOJIS.keys()]  # кнопки в столбик, каждая — свой эмодзи
+
     await update.message.reply_text(
         "Kādu žanru vēlies? Izvēlies emoji:",
         reply_markup=ReplyKeyboardMarkup(
@@ -64,19 +76,18 @@ async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = update.message.text
-    logger.info(f"Saņēmu emoji: {emoji}")
-    if emoji not in GENRE_EMOJIS:
+    genre = GENRE_EMOJIS.get(emoji)
+    if not genre:
         await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
         return CHOOSE_GENRE
 
-    genre = GENRE_EMOJIS[emoji]
     user_data[update.effective_chat.id]["genre"] = genre
+    time_keyboard = [[e] for e in TIME_EMOJIS]  # кнопки по одному в строке
 
-    keyboard = [[e] for e in TIME_EMOJIS]
     await update.message.reply_text(
         "Cikos skatīsieties filmu? 🌅 - rīts, 🌇 - vakars, 🌃 - nakts",
         reply_markup=ReplyKeyboardMarkup(
-            keyboard,
+            time_keyboard,
             one_time_keyboard=True,
             resize_keyboard=True,
         ),
@@ -92,7 +103,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         params = {
             "apikey": OMDB_API_KEY,
             "type": "movie",
-            "s": genre,
+            "s": genre,  # поиск по жанру
         }
         response = requests.get("http://www.omdbapi.com/", params=params)
         response.raise_for_status()
@@ -104,6 +115,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ConversationHandler.END
 
+        import random
         film = random.choice(data["Search"])
         imdb_id = film.get("imdbID")
 
