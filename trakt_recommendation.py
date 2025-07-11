@@ -2,16 +2,16 @@ import os
 import random
 import logging
 import httpx
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logger = logging.getLogger("trakt_recommendation")
 
-TRAKT_CLIENT_ID = os.getenv("TRAKT_CLIENT_ID")
+MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
+if not MEOWVIE_BOT_TOKEN:
+    raise ValueError("MEOWVIE_BOT_TOKEN nav definēts Railway vidē")
 
+TRAKT_CLIENT_ID = os.getenv("TRAKT_CLIENT_ID")
 if not TRAKT_CLIENT_ID:
-    raise ValueError("TRAKT_CLIENT_ID nav definēts .env failā")
+    raise ValueError("TRAKT_CLIENT_ID nav definēts Railway vidē")
 
 HEADERS = {
     "Content-Type": "application/json",
