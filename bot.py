@@ -1,8 +1,8 @@
 import logging
-import requests
-from dotenv import load_dotenv
 import os
 import random
+import requests
+from dotenv import load_dotenv
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -25,25 +25,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 GENRE_EMOJIS = {
-    "🎭 Drama": "Drama",
-    "😂 Comedy": "Comedy",
-    "😱 Horror": "Horror",
-    "🚀 Sci-Fi": "Sci-Fi",
-    "🔫 Action": "Action",
-    "💖 Romance": "Romance",
+    "🎭": "Drama",
+    "😂": "Comedy",
+    "😱": "Horror",
+    "🚀": "Sci-Fi",
+    "🔫": "Action",
+    "💖": "Romance",
 }
 
-TIME_EMOJIS = {
-    "🌅 Rīts": "rīts",
-    "🌇 Vakars": "vakars",
-    "🌃 Nakts": "nakts",
-}
+TIME_EMOJIS = ["🌅", "🌇", "🌃"]  # rīts, vakars, nakts
 
 user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Čau, esmu Meowie! 🎬 Es palīdzēšu atrast filmu vakaram.\n"
+        "Čau, esmu Meowie!🎬 Es palīdzēšu atrast filmu vakaram.\n"
         "Norādi, vai Tu skaties vienatnē vai divatā.\n"
         "Izvēlies žanru un laiku, kad plāno skatīties 🐾\n\n"
         "Vai skatīsies viens vai kopā?",
@@ -55,38 +51,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data[update.effective_chat.id] = {"people": update.message.text}
-    genre_buttons = list(GENRE_EMOJIS.keys())
-    keyboard = [genre_buttons[i:i+3] for i in range(0, len(genre_buttons), 3)]
+    keyboard = [[emoji] for emoji in GENRE_EMOJIS.keys()]
     await update.message.reply_text(
-        "Kādu žanru vēlies? Izvēlies no saraksta:",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+        "Kādu žanru vēlies? Izvēlies emoji:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        ),
     )
     return CHOOSE_GENRE
 
 async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    choice = update.message.text
-    genre = GENRE_EMOJIS.get(choice)
-    if not genre:
-        await update.message.reply_text("Lūdzu, izvēlies no pogām zemāk.")
+    emoji = update.message.text
+    logger.info(f"Saņēmu emoji: {emoji}")
+    if emoji not in GENRE_EMOJIS:
+        await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
         return CHOOSE_GENRE
 
+    genre = GENRE_EMOJIS[emoji]
     user_data[update.effective_chat.id]["genre"] = genre
-    time_buttons = list(TIME_EMOJIS.keys())
+
+    keyboard = [[e] for e in TIME_EMOJIS]
     await update.message.reply_text(
-        "Cikos skatīsieties filmu?",
-        reply_markup=ReplyKeyboardMarkup([[b] for b in time_buttons], one_time_keyboard=True, resize_keyboard=True),
+        "Cikos skatīsieties filmu? 🌅 - rīts, 🌇 - vakars, 🌃 - nakts",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        ),
     )
     return CHOOSE_TIME
 
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_chat.id
-    choice = update.message.text
-    time = TIME_EMOJIS.get(choice)
-    if not time:
-        await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
-        return CHOOSE_TIME
-
-    user_data[user_id]["time"] = time
+    user_data[user_id]["time"] = update.message.text
     genre = user_data[user_id]["genre"]
 
     try:
@@ -100,7 +99,9 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = response.json()
 
         if data.get("Response") == "False" or "Search" not in data:
-            await update.message.reply_text("Neizdevās atrast filmu ar šo žanru. Pamēģini vēlreiz!")
+            await update.message.reply_text(
+                "Neizdevās atrast filmu ar šo žanru. Pamēģini vēlreiz!"
+            )
             return ConversationHandler.END
 
         film = random.choice(data["Search"])
@@ -125,6 +126,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Kļūda: {e}")
         await update.message.reply_text("Neizdevās iegūt filmu. Pamēģini vēlāk.")
+
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
