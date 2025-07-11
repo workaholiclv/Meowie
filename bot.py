@@ -87,16 +87,17 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Neizdevās atrast filmu. Pamēģini vēlāk.")
             return ConversationHandler.END
 
-reply_text = f"""🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})
+        reply_text = f"""🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})
 
 Žanri: {movie['genres']}
 
 {movie['overview']}"""
-await update.message.reply_text(reply_text, parse_mode="Markdown")
+        await update.message.reply_text(reply_text, parse_mode="Markdown")
 
     except Exception as e:
         logger.error(f"Kļūda: {e}")
         await update.message.reply_text("Neizdevās iegūt filmu. Pamēģini vēlāk.")
+
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
