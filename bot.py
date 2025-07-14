@@ -15,6 +15,9 @@ from trakt_recommendation import get_random_movie_by_genre
 load_dotenv()
 
 MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
+print(f"MEOWVIE_BOT_TOKEN: {MEOWVIE_BOT_TOKEN}") 
+if not MEOWVIE_BOT_TOKEN:
+    raise ValueError("MEOWVIE_BOT_TOKEN не установлен в окружении")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
