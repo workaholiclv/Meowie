@@ -16,7 +16,7 @@ load_dotenv()
 
 MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
 if not MEOWVIE_BOT_TOKEN:
-    raise ValueError("MEOWVIE_BOT_TOKEN nav norādīts Railway")
+    raise ValueError("MEOWVIE_BOT_TOKEN nav norādīts Railway vai .env failā")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
@@ -34,7 +34,6 @@ GENRE_EMOJIS = {
 
 TIME_EMOJIS = ["🌅", "🌇", "🌃"]
 
-user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -51,14 +50,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_chat.id] = {"people": update.message.text}
+    context.user_data["people"] = update.message.text
     await update.message.reply_text(
         "Kādu žanru vēlies? Izvēlies:",
         reply_markup=ReplyKeyboardMarkup(
-            [[e for e in GENRE_EMOJIS.keys()]], one_time_keyboard=True, resize_keyboard=True
+            [[e] for e in GENRE_EMOJIS.keys()], one_time_keyboard=True, resize_keyboard=True
         ),
     )
     return CHOOSE_GENRE
+
 
 async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = update.message.text
@@ -67,7 +67,7 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
         return CHOOSE_GENRE
 
-    user_data[update.effective_chat.id]["genre"] = genre
+    context.user_data["genre"] = genre
     await update.message.reply_text(
         "Cikos skatīsieties filmu?",
         reply_markup=ReplyKeyboardMarkup(
@@ -76,24 +76,23 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return CHOOSE_TIME
 
+
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_chat.id
-    user_data[user_id]["time"] = update.message.text
-    genre = user_data[user_id]["genre"]
-    people = user_data[user_id]["people"]
+    context.user_data["time"] = update.message.text
+    genre = context.user_data.get("genre")
+    people = context.user_data.get("people")
 
     try:
         movie = get_random_movie_by_genre(genre, people)
-
         if not movie:
             await update.message.reply_text("Neizdevās atrast filmu. Pamēģini vēlāk.")
             return ConversationHandler.END
 
-        reply_text = f"""🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})
-
-Žanri: {movie['genres']}
-
-{movie['overview']}"""
+        reply_text = (
+            f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
+            f"Žanri: {movie['genres']}\n\n"
+            f"{movie['overview']}"
+        )
         await update.message.reply_text(reply_text, parse_mode="Markdown")
 
     except Exception as e:
@@ -102,9 +101,11 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Filmas meklēšana atcelta.")
     return ConversationHandler.END
+
 
 def main():
     app = ApplicationBuilder().token(MEOWVIE_BOT_TOKEN).build()
@@ -122,6 +123,7 @@ def main():
     app.add_handler(conv_handler)
     print("Meowie ieskrējis čatā!")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
