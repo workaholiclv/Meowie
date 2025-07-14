@@ -14,9 +14,9 @@ from trakt_recommendation import get_random_movie_by_genre
 
 load_dotenv()
 
-MEOWVIE_BOT_TOKEN = os.getenv("MEOWVIE_BOT_TOKEN")
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 if not MEOWVIE_BOT_TOKEN:
-    raise ValueError("MEOWVIE_BOT_TOKEN nav norādīts Railway vai .env failā")
+    raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
 
@@ -108,7 +108,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    app = ApplicationBuilder().token(MEOWVIE_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
