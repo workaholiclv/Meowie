@@ -15,7 +15,7 @@ from trakt_recommendation import get_random_movie_by_genre
 load_dotenv()
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-if not MEOWVIE_BOT_TOKEN:
+if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
