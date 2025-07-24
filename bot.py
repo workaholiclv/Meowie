@@ -3,6 +3,7 @@ import os
 import json
 from dotenv import load_dotenv
 import openai
+import random
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -15,7 +16,8 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
-from trakt_recommendation import get_random_movie_by_genre
+# Импорт твоей функции, немного изменённой под рейтинг
+from trakt_recommendation import get_movies_by_genre_and_people
 
 load_dotenv()
 
@@ -29,8 +31,7 @@ if not OPENAI_API_KEY:
 
 openai.api_key = OPENAI_API_KEY
 
-CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_REPEAT = range(4)
-WAITING_QUESTION = 5  # Новое состояние ожидания вопроса от пользователя
+CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ GENRE_EMOJIS = {
 }
 
 TIME_EMOJIS = ["🌅", "🌇", "🌃"]
+
+RATING_OPTIONS = ["5+", "6+", "7+", "8+", "9+"]
 
 HISTORY_FILE = "user_history.json"
 
@@ -76,6 +79,10 @@ def get_text(key, lang):
         "time_prompt": {
             "Latviešu": "Cikos skatīsieties filmu?",
             "English": "When will you watch the movie?"
+        },
+        "rating_prompt": {
+            "Latviešu": "Izvēlies minimālo filmas vērtējumu:",
+            "English": "Choose minimum movie rating:"
         },
         "not_found": {
             "Latviešu": "Neizdevās atrast filmu. Pamēģini vēlāk.",
@@ -111,6 +118,16 @@ def get_text(key, lang):
         }
     }
     return texts[key].get(lang, texts[key][DEFAULT_LANGUAGE])
+
+# Новая функция с фильтрацией по рейтингу
+def get_random_movie_by_genre(genre, people, min_rating=0):
+    # Получаем список фильмов от твоей функции, которую нужно доработать
+    movies = get_movies_by_genre_and_people(genre, people)
+    # Фильтрация по рейтингу
+    filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
+    if not filtered:
+        return None
+    return random.choice(filtered)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["lang"] = DEFAULT_LANGUAGE
@@ -150,11 +167,64 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return CHOOSE_TIME
 
-# Вынесем в функцию отправку фильма с кнопками, добавлена кнопка 🤖
+async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["time"] = update.message.text
+    lang = context.user_data.get("lang")
+
+    # Запрашиваем минимальный рейтинг
+    await update.message.reply_text(
+        get_text("rating_prompt", lang),
+        reply_markup=ReplyKeyboardMarkup(
+            [[r] for r in RATING_OPTIONS], one_time_keyboard=True, resize_keyboard=True
+        ),
+    )
+    return CHOOSE_RATING
+
+async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rating_text = update.message.text
+    lang = context.user_data.get("lang")
+    people = context.user_data.get("people")
+    genre = context.user_data.get("genre")
+    time_ = context.user_data.get("time")
+
+    try:
+        min_rating = int(rating_text.rstrip("+"))
+    except ValueError:
+        await update.message.reply_text(get_text("choose_repeat_invalid", lang))
+        return CHOOSE_RATING
+
+    context.user_data["min_rating"] = min_rating
+
+    movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+
+    if not movie:
+        await update.message.reply_text(get_text("not_found", lang))
+        return ConversationHandler.END
+
+    context.user_data["last_movie"] = movie
+
+    user_id = str(update.effective_user.id)
+    history = load_history()
+    history.setdefault(user_id, []).append({
+        "title": movie["title"],
+        "year": movie["year"],
+        "url": movie["trakt_url"],
+        "people": people,
+        "genre": genre,
+        "time": time_,
+        "min_rating": min_rating
+    })
+    save_history(history)
+
+    await send_movie_with_buttons(update.message, context, movie, lang)
+
+    return CHOOSE_REPEAT
+
 async def send_movie_with_buttons(update_or_query_message, context, movie, lang):
     reply_text = (
         f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
         f"Žanri: {movie['genres']}\n\n"
+        f"Vērtējums: {movie.get('rating', 'nav')}\n\n"
         f"{movie['overview']}"
     )
 
@@ -174,41 +244,6 @@ async def send_movie_with_buttons(update_or_query_message, context, movie, lang)
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["time"] = update.message.text
-    genre = context.user_data.get("genre")
-    people = context.user_data.get("people")
-    lang = context.user_data.get("lang")
-
-    try:
-        movie = get_random_movie_by_genre(genre, people)
-        if not movie:
-            await update.message.reply_text(get_text("not_found", lang))
-            return ConversationHandler.END
-
-        context.user_data["last_movie"] = movie
-
-        user_id = str(update.effective_user.id)
-        history = load_history()
-        history.setdefault(user_id, []).append({
-            "title": movie["title"],
-            "year": movie["year"],
-            "url": movie["trakt_url"],
-            "people": people,
-            "genre": genre,
-            "time": context.user_data["time"]
-        })
-        save_history(history)
-
-        await send_movie_with_buttons(update.message, context, movie, lang)
-
-        return CHOOSE_REPEAT
-
-    except Exception as e:
-        logger.error(f"Kļūda: {e}")
-        await update.message.reply_text(get_text("not_found", lang))
-        return ConversationHandler.END
-
 async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = update.message.text.strip().lower()
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
@@ -219,8 +254,9 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if choice == repeat_text:
         genre = context.user_data.get("genre")
         people = context.user_data.get("people")
+        min_rating = context.user_data.get("min_rating", 0)
         try:
-            movie = get_random_movie_by_genre(genre, people)
+            movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
             if not movie:
                 await update.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
@@ -235,7 +271,8 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "url": movie["trakt_url"],
                 "people": people,
                 "genre": genre,
-                "time": context.user_data.get("time", "")
+                "time": context.user_data.get("time", ""),
+                "min_rating": min_rating
             })
             save_history(history)
 
@@ -282,7 +319,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
-# Обработчик callback query для кнопок 🤖, 🔄, 🔁
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -299,8 +335,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "repeat_movie":
         genre = context.user_data.get("genre")
         people = context.user_data.get("people")
+        min_rating = context.user_data.get("min_rating", 0)
         try:
-            movie = get_random_movie_by_genre(genre, people)
+            movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
             if not movie:
                 await query.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
@@ -315,7 +352,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "url": movie["trakt_url"],
                 "people": people,
                 "genre": genre,
-                "time": context.user_data.get("time", "")
+                "time": context.user_data.get("time", ""),
+                "min_rating": min_rating
             })
             save_history(history)
 
@@ -335,7 +373,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
         return CHOOSE_REPEAT
 
-# Обработчик сообщения с вопросом для AI после нажатия 🤖
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("waiting_for_ai_question"):
         question = update.message.text
@@ -370,15 +407,11 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["waiting_for_ai_question"] = False
 
-        # После ответа показываем кнопки заново
         await send_movie_with_buttons(update, context, movie, context.user_data.get("lang", DEFAULT_LANGUAGE))
 
         return CHOOSE_REPEAT
 
     return None
-
-# Команда /ai отключена, так как мы переключаемся на новый подход с кнопкой и состоянием ожидания
-# Но если надо — можно оставить заглушку или удалить полностью
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
@@ -389,6 +422,7 @@ def main():
             CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
             CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
             CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+            CHOOSE_RATING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_rating)],
             CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
             WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
         },
@@ -406,4 +440,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+   
