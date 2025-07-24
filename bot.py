@@ -2,6 +2,8 @@ import logging
 import os
 import json
 from dotenv import load_dotenv
+import openai
+
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,13 +13,20 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
+
 from trakt_recommendation import get_random_movie_by_genre
 
 load_dotenv()
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY nav norādīts Railway vai .env failā")
+
+openai.api_key = OPENAI_API_KEY
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_REPEAT = range(4)
 
@@ -151,6 +160,9 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text("not_found", lang))
             return ConversationHandler.END
 
+        # Сохраняем последнюю рекомендованную фильм для /ai
+        context.user_data["last_movie"] = movie
+
         user_id = str(update.effective_user.id)
         history = load_history()
         history.setdefault(user_id, []).append({
@@ -172,6 +184,9 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = []
         if movie.get("youtube_trailer"):
             buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
+
+        # Добавляем кнопку для /ai с эмоджи
+        buttons.append([InlineKeyboardButton("🤖 Uzdot jautājumu (/ai)", callback_data="ai")])
 
         await update.message.reply_text(reply_text, parse_mode="Markdown",
                                         reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
@@ -205,6 +220,9 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
 
+            # Сохраняем последнюю рекомендованную фильм для /ai
+            context.user_data["last_movie"] = movie
+
             user_id = str(update.effective_user.id)
             history = load_history()
             history.setdefault(user_id, []).append({
@@ -225,6 +243,8 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons = []
             if movie.get("youtube_trailer"):
                 buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
+
+            buttons.append([InlineKeyboardButton("🤖 Uzdot jautājumu (/ai)", callback_data="ai")])
 
             await update.message.reply_text(reply_text, parse_mode="Markdown",
                                             reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
@@ -276,6 +296,42 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
+# Новый обработчик для /ai
+async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_input = " ".join(context.args)
+
+    last_movie = context.user_data.get("last_movie")
+    if not last_movie:
+        await update.message.reply_text("❗️ Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
+        return
+
+    if not user_input:
+        await update.message.reply_text(
+            "ℹ️ Lūdzu, uzraksti jautājumu pēc /ai komandas, piemēram:\n/ai Kādas balvas ir saņēmusi šī filma?"
+        )
+        return
+
+    title = last_movie.get("title", "")
+    prompt = f"Filma: {title}\nJautājums: {user_input}\nAtbildi īsi, bet ar interesantiem faktiem."
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Tu esi kino eksperts."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7,
+        )
+
+        answer = response["choices"][0]["message"]["content"]
+        await update.message.reply_text(f"🎬 {title} — atbilde uz jautājumu:\n\n{answer}")
+
+    except Exception as e:
+        await update.message.reply_text("❌ Neizdevās iegūt informāciju no AI.")
+        logger.error(f"AI kļūda: {e}")
+
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
 
@@ -294,6 +350,7 @@ def main():
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("language", set_language))
     app.add_handler(CommandHandler("history", history))
+    app.add_handler(CommandHandler("ai", ai_command))
 
     print("Meowie ieskrējis čatā!")
     app.run_polling()
