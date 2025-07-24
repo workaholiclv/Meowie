@@ -19,7 +19,7 @@ TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
 
-CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME = range(3)
+CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_REPEAT = range(4)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,6 +77,22 @@ def get_text(key, lang):
         "choose_language": {
             "Latviešu": "Izvēlies valodu / Choose a language:",
             "English": "Izvēlies valodu / Choose a language:"
+        },
+        "repeat_prompt": {
+            "Latviešu": "Izvēlies, ko darīt tālāk:",
+            "English": "Choose what to do next:"
+        },
+        "repeat_option": {
+            "Latviešu": "🔄 Vēl filmu",
+            "English": "🔄 Another movie"
+        },
+        "restart_option": {
+            "Latviešu": "🔁 Sākt no jauna",
+            "English": "🔁 Restart"
+        },
+        "choose_repeat_invalid": {
+            "Latviešu": "Lūdzu, izvēlies no piedāvātajām opcijām.",
+            "English": "Please choose from the offered options."
         }
     }
     return texts[key].get(lang, texts[key][DEFAULT_LANGUAGE])
@@ -107,7 +123,7 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = update.message.text
     genre = GENRE_EMOJIS.get(emoji)
     if not genre:
-        await update.message.reply_text("Lūdzu, izvēlies no piedāvātajām opcijām.")
+        await update.message.reply_text(get_text("choose_repeat_invalid", context.user_data["lang"]))
         return CHOOSE_GENRE
 
     context.user_data["genre"] = genre
@@ -155,11 +171,69 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(reply_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
+        # Предлагаем выбор: повторить или начать заново
+        keyboard = [
+            [get_text("repeat_option", lang)],
+            [get_text("restart_option", lang)],
+        ]
+        await update.message.reply_text(get_text("repeat_prompt", lang),
+                                        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True))
+        return CHOOSE_REPEAT
+
     except Exception as e:
         logger.error(f"Kļūda: {e}")
         await update.message.reply_text(get_text("not_found", lang))
+        return ConversationHandler.END
 
-    return ConversationHandler.END
+async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = update.message.text.strip().lower()
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+
+    repeat_text = get_text("repeat_option", lang).lower()
+    restart_text = get_text("restart_option", lang).lower()
+
+    if choice == repeat_text:
+        # Повторить выбор фильма с теми же параметрами
+        genre = context.user_data.get("genre")
+        people = context.user_data.get("people")
+        try:
+            movie = get_random_movie_by_genre(genre, people)
+            if not movie:
+                await update.message.reply_text(get_text("not_found", lang))
+                return ConversationHandler.END
+
+            reply_text = (
+                f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
+                f"Žanri: {movie['genres']}\n\n"
+                f"{movie['overview']}"
+            )
+            buttons = []
+            if movie.get("youtube_trailer"):
+                buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
+
+            await update.message.reply_text(reply_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
+
+            # Снова предлагаем выбор
+            keyboard = [
+                [get_text("repeat_option", lang)],
+                [get_text("restart_option", lang)],
+            ]
+            await update.message.reply_text(get_text("repeat_prompt", lang),
+                                            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True))
+            return CHOOSE_REPEAT
+
+        except Exception as e:
+            logger.error(f"Kļūda: {e}")
+            await update.message.reply_text(get_text("not_found", lang))
+            return ConversationHandler.END
+
+    elif choice == restart_text:
+        # Начать заново
+        return await start(update, context)
+
+    else:
+        await update.message.reply_text(get_text("choose_repeat_invalid", lang))
+        return CHOOSE_REPEAT
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_text("cancel", context.user_data["lang"]))
@@ -197,6 +271,7 @@ def main():
             CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
             CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
             CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+            CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
