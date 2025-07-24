@@ -12,6 +12,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
     ConversationHandler,
+    CallbackQueryHandler,
 )
 
 from trakt_recommendation import get_random_movie_by_genre
@@ -124,32 +125,47 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["people"] = update.message.text
     lang = context.user_data["lang"]
+
+    # Выбираем жанр через inline-кнопки с emoji
+    buttons = [[InlineKeyboardButton(e, callback_data=f"genre_{GENRE_EMOJIS[e]}")] for e in GENRE_EMOJIS.keys()]
     await update.message.reply_text(
         get_text("genre_prompt", lang),
-        reply_markup=ReplyKeyboardMarkup(
-            [[e] for e in GENRE_EMOJIS.keys()], one_time_keyboard=True, resize_keyboard=True
-        ),
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
     return CHOOSE_GENRE
 
-async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    emoji = update.message.text
-    genre = GENRE_EMOJIS.get(emoji)
-    if not genre:
-        await update.message.reply_text(get_text("choose_repeat_invalid", context.user_data["lang"]))
+async def genre_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not data.startswith("genre_"):
+        await query.edit_message_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
         return CHOOSE_GENRE
 
+    genre = data[len("genre_"):]
     context.user_data["genre"] = genre
-    await update.message.reply_text(
+
+    # Выбор времени через inline-кнопки
+    buttons = [[InlineKeyboardButton(e, callback_data=f"time_{e}")] for e in TIME_EMOJIS]
+    await query.edit_message_text(
         get_text("time_prompt", context.user_data["lang"]),
-        reply_markup=ReplyKeyboardMarkup(
-            [[e] for e in TIME_EMOJIS], one_time_keyboard=True, resize_keyboard=True
-        ),
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
     return CHOOSE_TIME
 
-async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["time"] = update.message.text
+async def time_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not data.startswith("time_"):
+        await query.edit_message_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
+        return CHOOSE_TIME
+
+    chosen_time = data[len("time_"):]
+    context.user_data["time"] = chosen_time
+
     genre = context.user_data.get("genre")
     people = context.user_data.get("people")
     lang = context.user_data.get("lang")
@@ -157,10 +173,9 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         movie = get_random_movie_by_genre(genre, people)
         if not movie:
-            await update.message.reply_text(get_text("not_found", lang))
+            await query.edit_message_text(get_text("not_found", lang))
             return ConversationHandler.END
 
-        # Сохраняем последнюю рекомендованную фильм для /ai
         context.user_data["last_movie"] = movie
 
         user_id = str(update.effective_user.id)
@@ -171,7 +186,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "url": movie["trakt_url"],
             "people": people,
             "genre": genre,
-            "time": context.user_data["time"]
+            "time": chosen_time
         })
         save_history(history)
 
@@ -185,23 +200,22 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if movie.get("youtube_trailer"):
             buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
 
-        # Добавляем кнопку для /ai с эмоджи
         buttons.append([InlineKeyboardButton("🤖 Uzdot jautājumu (/ai)", callback_data="ai")])
 
-        await update.message.reply_text(reply_text, parse_mode="Markdown",
-                                        reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
+        await query.edit_message_text(reply_text, parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
         keyboard = [
             [get_text("repeat_option", lang)],
             [get_text("restart_option", lang)],
         ]
-        await update.message.reply_text(get_text("repeat_prompt", lang),
-                                        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True))
+        await query.message.reply_text(get_text("repeat_prompt", lang),
+                                       reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True))
         return CHOOSE_REPEAT
 
     except Exception as e:
         logger.error(f"Kļūda: {e}")
-        await update.message.reply_text(get_text("not_found", lang))
+        await query.edit_message_text(get_text("not_found", lang))
         return ConversationHandler.END
 
 async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -220,7 +234,6 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
 
-            # Сохраняем последнюю рекомендованную фильм для /ai
             context.user_data["last_movie"] = movie
 
             user_id = str(update.effective_user.id)
@@ -296,7 +309,30 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
-# Новый обработчик для /ai
+# Новый обработчик для callback кнопок
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if data == "ai":
+        last_movie = context.user_data.get("last_movie")
+        if not last_movie:
+            await query.edit_message_text("❗️ Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
+            return
+        await query.edit_message_text(
+            "Lūdzu, izmanto komandu /ai <jautājums> lai uzdotu jautājumu par pēdējo filmu."
+        )
+        return
+    else:
+        # Если пришли сюда не жанр и не время - игнорируем
+        if data.startswith("genre_") or data.startswith("time_"):
+            # Обработку перенесли в отдельные хендлеры
+            return
+
+        await query.edit_message_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
+
+# Команда /ai
 async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = " ".join(context.args)
 
@@ -339,11 +375,12 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
-            CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
-            CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+            CHOOSE_GENRE: [CallbackQueryHandler(genre_chosen, pattern="^genre_")],
+            CHOOSE_TIME: [CallbackQueryHandler(time_chosen, pattern="^time_")],
             CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_user=True,
     )
 
     app.add_handler(conv_handler)
@@ -351,6 +388,9 @@ def main():
     app.add_handler(CommandHandler("language", set_language))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("ai", ai_command))
+
+    # Добавляем обработчик callback кнопок (например, для "ai" кнопки)
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^ai$"))
 
     print("Meowie ieskrējis čatā!")
     app.run_polling()
