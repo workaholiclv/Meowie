@@ -117,7 +117,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardMarkup(
             [["Viens", "Kopā"]] if context.user_data["lang"] == "Latviešu" else [["Alone", "Together"]],
             one_time_keyboard=True, resize_keyboard=True
-        ), input_field_placeholder='Izvēlies…',
+        ),
     )
     return CHOOSE_PEOPLE
 
@@ -128,7 +128,7 @@ async def choose_people(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_text("genre_prompt", lang),
         reply_markup=ReplyKeyboardMarkup(
             [[e] for e in GENRE_EMOJIS.keys()], one_time_keyboard=True, resize_keyboard=True
-        ), input_field_placeholder='Izvēlies…',
+        ),
     )
     return CHOOSE_GENRE
 
@@ -144,7 +144,7 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_text("time_prompt", context.user_data["lang"]),
         reply_markup=ReplyKeyboardMarkup(
             [[e] for e in TIME_EMOJIS], one_time_keyboard=True, resize_keyboard=True
-        ), input_field_placeholder='Izvēlies…',
+        ),
     )
     return CHOOSE_TIME
 
@@ -186,7 +186,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
 
         # Добавляем кнопку для /ai с эмоджи
-        buttons.append([InlineKeyboardButton(\"🤖 Uzdot jautājumu (/ai)\", switch_inline_query_current_chat=\"/ai \")])
+        buttons.append([InlineKeyboardButton("🤖 Uzdot jautājumu (/ai)", callback_data="ai")])
 
         await update.message.reply_text(reply_text, parse_mode="Markdown",
                                         reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
@@ -244,7 +244,7 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if movie.get("youtube_trailer"):
                 buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
 
-            buttons.append([InlineKeyboardButton(\"🤖 Uzdot jautājumu (/ai)\", switch_inline_query_current_chat=\"/ai \")])
+            buttons.append([InlineKeyboardButton("🤖 Uzdot jautājumu (/ai)", callback_data="ai")])
 
             await update.message.reply_text(reply_text, parse_mode="Markdown",
                                             reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
@@ -278,7 +278,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_text("choose_language", DEFAULT_LANGUAGE),
         reply_markup=ReplyKeyboardMarkup(
             [[lang] for lang in LANGUAGES], one_time_keyboard=True, resize_keyboard=True
-        ), input_field_placeholder='Izvēlies…',
+        ),
     )
     return CHOOSE_PEOPLE
 
