@@ -93,6 +93,10 @@ def get_text(key, lang):
         "choose_repeat_invalid": {
             "Latviešu": "Lūdzu, izvēlies no piedāvātajām opcijām.",
             "English": "Please choose from the offered options."
+        },
+        "history_empty": {
+            "Latviešu": "Vēsture ir tukša.",
+            "English": "History is empty."
         }
     }
     return texts[key].get(lang, texts[key][DEFAULT_LANGUAGE])
@@ -169,9 +173,9 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if movie.get("youtube_trailer"):
             buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
 
-        await update.message.reply_text(reply_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
+        await update.message.reply_text(reply_text, parse_mode="Markdown",
+                                        reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
-        # Предлагаем выбор: повторить или начать заново
         keyboard = [
             [get_text("repeat_option", lang)],
             [get_text("restart_option", lang)],
@@ -193,7 +197,6 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     restart_text = get_text("restart_option", lang).lower()
 
     if choice == repeat_text:
-        # Повторить выбор фильма с теми же параметрами
         genre = context.user_data.get("genre")
         people = context.user_data.get("people")
         try:
@@ -201,6 +204,18 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not movie:
                 await update.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
+
+            user_id = str(update.effective_user.id)
+            history = load_history()
+            history.setdefault(user_id, []).append({
+                "title": movie["title"],
+                "year": movie["year"],
+                "url": movie["trakt_url"],
+                "people": people,
+                "genre": genre,
+                "time": context.user_data.get("time", "")
+            })
+            save_history(history)
 
             reply_text = (
                 f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
@@ -211,9 +226,9 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if movie.get("youtube_trailer"):
                 buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
 
-            await update.message.reply_text(reply_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
+            await update.message.reply_text(reply_text, parse_mode="Markdown",
+                                            reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
-            # Снова предлагаем выбор
             keyboard = [
                 [get_text("repeat_option", lang)],
                 [get_text("restart_option", lang)],
@@ -228,7 +243,6 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
     elif choice == restart_text:
-        # Начать заново
         return await start(update, context)
 
     else:
@@ -254,7 +268,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history = load_history().get(user_id, [])
 
     if not history:
-        await update.message.reply_text("Vēsture ir tukša." if lang == "Latviešu" else "History is empty.")
+        await update.message.reply_text(get_text("history_empty", lang))
         return
 
     lines = []
