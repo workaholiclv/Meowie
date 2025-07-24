@@ -12,6 +12,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
     ConversationHandler,
+    CallbackQueryHandler,
 )
 
 from trakt_recommendation import get_random_movie_by_genre
@@ -29,6 +30,7 @@ if not OPENAI_API_KEY:
 openai.api_key = OPENAI_API_KEY
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_REPEAT = range(4)
+WAITING_QUESTION = 5  # Новое состояние ожидания вопроса от пользователя
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -148,6 +150,30 @@ async def choose_genre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return CHOOSE_TIME
 
+# Вынесем в функцию отправку фильма с кнопками, добавлена кнопка 🤖
+async def send_movie_with_buttons(update_or_query_message, context, movie, lang):
+    reply_text = (
+        f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
+        f"Žanri: {movie['genres']}\n\n"
+        f"{movie['overview']}"
+    )
+
+    buttons = []
+    if movie.get("youtube_trailer"):
+        buttons.append([InlineKeyboardButton("🎞️ Trailer", url=movie["youtube_trailer"])])
+
+    buttons.append([
+        InlineKeyboardButton("🤖", callback_data="ask_ai"),
+        InlineKeyboardButton(get_text("repeat_option", lang), callback_data="repeat_movie"),
+        InlineKeyboardButton(get_text("restart_option", lang), callback_data="restart")
+    ])
+
+    await update_or_query_message.reply_text(
+        reply_text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["time"] = update.message.text
     genre = context.user_data.get("genre")
@@ -174,30 +200,8 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         })
         save_history(history)
 
-        reply_text = (
-            f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
-            f"Žanri: {movie['genres']}\n\n"
-            f"{movie['overview']}"
-        )
+        await send_movie_with_buttons(update.message, context, movie, lang)
 
-        # Отправляем результат фильма
-        await update.message.reply_text(reply_text, parse_mode="Markdown")
-
-        # Отправляем подсказку с готовой командой /ai с названием фильма для дальнейших вопросов
-        await update.message.reply_text(
-            f"Lūdzu, uzdod jautājumu par filmu, izmantojot komandu:\n"
-            f"/ai 🎬 {movie['title']} <tavs jautājums>\n\n"
-            f"Piemēram:\n/ai 🎬 {movie['title']} Kādas balvas ir saņēmusi šī filma?"
-        )
-
-        keyboard = [
-            [get_text("repeat_option", lang)],
-            [get_text("restart_option", lang)],
-        ]
-        await update.message.reply_text(
-            get_text("repeat_prompt", lang),
-            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-        )
         return CHOOSE_REPEAT
 
     except Exception as e:
@@ -235,27 +239,8 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             })
             save_history(history)
 
-            reply_text = (
-                f"🎬 *[{movie['title']}]({movie['trakt_url']})* ({movie['year']})\n\n"
-                f"Žanri: {movie['genres']}\n\n"
-                f"{movie['overview']}"
-            )
-            await update.message.reply_text(reply_text, parse_mode="Markdown")
+            await send_movie_with_buttons(update.message, context, movie, lang)
 
-            await update.message.reply_text(
-                f"Lūdzu, uzdod jautājumu par filmu, izmantojot komandu:\n"
-                f"/ai 🎬 {movie['title']} <tavs jautājums>\n\n"
-                f"Piemēram:\n/ai 🎬 {movie['title']} Kādas balvas ir saņēmusi šī filma?"
-            )
-
-            keyboard = [
-                [get_text("repeat_option", lang)],
-                [get_text("restart_option", lang)],
-            ]
-            await update.message.reply_text(
-                get_text("repeat_prompt", lang),
-                reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-            )
             return CHOOSE_REPEAT
 
         except Exception as e:
@@ -271,7 +256,7 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHOOSE_REPEAT
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(get_text("cancel", context.user_data["lang"]))
+    await update.message.reply_text(get_text("cancel", context.user_data.get("lang", DEFAULT_LANGUAGE)))
     return ConversationHandler.END
 
 async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,40 +282,103 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
-async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = " ".join(context.args)
+# Обработчик callback query для кнопок 🤖, 🔄, 🔁
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
-    last_movie = context.user_data.get("last_movie")
-    if not last_movie:
-        await update.message.reply_text("❗️ Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
-        return
-
-    if not user_input:
-        await update.message.reply_text(
-            "ℹ️ Lūdzu, uzraksti jautājumu pēc /ai komandas, piemēram:\n/ai Kādas balvas ir saņēmusi šī filma?"
+    if data == "ask_ai":
+        await query.message.reply_text(
+            "Lūdzu, uzraksti savu jautājumu par filmu. Es gaidīšu tavu ziņu."
         )
-        return
+        context.user_data["waiting_for_ai_question"] = True
+        return WAITING_QUESTION
 
-    title = last_movie.get("title", "")
-    prompt = f"Filma: {title}\nJautājums: {user_input}\nAtbildi īsi, bet ar interesantiem faktiem."
+    elif data == "repeat_movie":
+        genre = context.user_data.get("genre")
+        people = context.user_data.get("people")
+        try:
+            movie = get_random_movie_by_genre(genre, people)
+            if not movie:
+                await query.message.reply_text(get_text("not_found", lang))
+                return ConversationHandler.END
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Tu esi kino eksperts."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.7,
-        )
+            context.user_data["last_movie"] = movie
 
-        answer = response["choices"][0]["message"]["content"]
-        await update.message.reply_text(f"🎬 {title} — atbilde uz jautājumu:\n\n{answer}")
+            user_id = str(query.from_user.id)
+            history = load_history()
+            history.setdefault(user_id, []).append({
+                "title": movie["title"],
+                "year": movie["year"],
+                "url": movie["trakt_url"],
+                "people": people,
+                "genre": genre,
+                "time": context.user_data.get("time", "")
+            })
+            save_history(history)
 
-    except Exception as e:
-        await update.message.reply_text("❌ Neizdevās iegūt informāciju no AI.")
-        logger.error(f"AI kļūda: {e}")
+            await send_movie_with_buttons(query.message, context, movie, lang)
+            return CHOOSE_REPEAT
+
+        except Exception as e:
+            logger.error(f"Kļūda: {e}")
+            await query.message.reply_text(get_text("not_found", lang))
+            return ConversationHandler.END
+
+    elif data == "restart":
+        await query.message.reply_text(get_text("cancel", lang))
+        return await start(update, context)
+
+    else:
+        await query.message.reply_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
+        return CHOOSE_REPEAT
+
+# Обработчик сообщения с вопросом для AI после нажатия 🤖
+async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("waiting_for_ai_question"):
+        question = update.message.text
+        movie = context.user_data.get("last_movie")
+        if not movie:
+            await update.message.reply_text("❗️ Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
+            context.user_data["waiting_for_ai_question"] = False
+            return CHOOSE_REPEAT
+
+        title = movie.get("title", "")
+        prompt = f"Filma: {title}\nJautājums: {question}\nAtbildi īsi, bet ar interesantiem faktiem."
+
+        await update.message.chat.send_action(action="typing")
+
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Tu esi kino eksperts."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.7,
+            )
+
+            answer = response["choices"][0]["message"]["content"]
+            await update.message.reply_text(f"🎬 {title} — atbilde uz jautājumu:\n\n{answer}")
+
+        except Exception as e:
+            await update.message.reply_text("❌ Neizdevās iegūt informāciju no AI.")
+            logger.error(f"AI kļūda: {e}")
+
+        context.user_data["waiting_for_ai_question"] = False
+
+        # После ответа показываем кнопки заново
+        await send_movie_with_buttons(update, context, movie, context.user_data.get("lang", DEFAULT_LANGUAGE))
+
+        return CHOOSE_REPEAT
+
+    return None
+
+# Команда /ai отключена, так как мы переключаемся на новый подход с кнопкой и состоянием ожидания
+# Но если надо — можно оставить заглушку или удалить полностью
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
@@ -342,6 +390,7 @@ def main():
             CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
             CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
             CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
+            WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -350,7 +399,8 @@ def main():
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("language", set_language))
     app.add_handler(CommandHandler("history", history))
-    app.add_handler(CommandHandler("ai", ai_command))
+
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     print("Meowie ieskrējis čatā!")
     app.run_polling()
