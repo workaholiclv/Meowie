@@ -407,9 +407,15 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["waiting_for_ai_question"] = False
 
-        await send_movie_with_buttons(update, context, movie, context.user_data.get("lang", DEFAULT_LANGUAGE))
+keyboard = [[InlineKeyboardButton("🎲 Jauna filma", callback_data="repeat")]]
+reply_markup = InlineKeyboardMarkup(keyboard)
 
-        return CHOOSE_REPEAT
+await update.message.reply_text(
+    "Vai vēlies ieteikumu nākamajai filmai?",
+    reply_markup=reply_markup
+)
+
+return CHOOSE_REPEAT
 
     return ConversationHandler.END
 
