@@ -119,15 +119,7 @@ def get_text(key, lang):
     }
     return texts[key].get(lang, texts[key][DEFAULT_LANGUAGE])
 
-# Новая функция с фильтрацией по рейтингу
 def get_random_movie_by_genre(genre, people, min_rating=0):
-    # Получаем список фильмов от твоей функции, которую нужно доработать
-    movies = get_movies_by_genre_and_people(genre, people)
-    # Фильтрация по рейтингу
-    filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
-    if not filtered:
-        return None
-    return random.choice(filtered)def get_random_movie_by_genre(genre, people, min_rating=0):
     movies = get_movies_by_genre_and_people(genre, people)
     
     if not movies:
