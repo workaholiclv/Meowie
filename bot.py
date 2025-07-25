@@ -2,8 +2,8 @@ import logging
 import os
 import json
 from dotenv import load_dotenv
-import openai
 import random
+import aiohttp
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -22,19 +22,18 @@ from trakt_recommendation import get_movies_by_genre_and_people
 load_dotenv()
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")  # Твой Hugging Face API токен
+HF_MODEL = "facebook/blenderbot-400M-distill"  # Можно заменить на другую чат-модель
 
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY nav norādīts Railway vai .env failā")
-
-openai.api_key = OPENAI_API_KEY
-
-CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
+if not HF_API_TOKEN:
+    raise ValueError("HF_API_TOKEN nav norādīts Railway vai .env failā")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
 
 LANGUAGES = ["Latviešu", "English"]
 DEFAULT_LANGUAGE = "Latviešu"
@@ -84,6 +83,10 @@ def get_text(key, lang):
             "Latviešu": "Izvēlies minimālo filmas vērtējumu:",
             "English": "Choose minimum movie rating:"
         },
+        "invalid_rating": {
+            "Latviešu": "Lūdzu, izvēlies derīgu vērtējumu no piedāvātajām opcijām.",
+            "English": "Please choose a valid rating from the options."
+        },
         "not_found": {
             "Latviešu": "Neizdevās atrast filmu. Pamēģini vēlāk.",
             "English": "Couldn't find a movie. Try again later."
@@ -121,17 +124,16 @@ def get_text(key, lang):
 
 def get_random_movie_by_genre(genre, people, min_rating=0):
     movies = get_movies_by_genre_and_people(genre, people)
-    
+
     if not movies:
         logger.warning(f"No movies found for genre={genre}, people={people}")
         return None
 
     filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
-    
+
     logger.info(f"Found {len(filtered)} movies after filtering with min_rating={min_rating} "
                 f"out of {len(movies)} total.")
 
-    # Если ничего не найдено — ослабим фильтр и предупредим
     if not filtered and min_rating > 0:
         logger.info(f"No movies found with rating >= {min_rating}. Trying without rating filter.")
         return random.choice(movies)
@@ -180,7 +182,6 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["time"] = update.message.text
     lang = context.user_data.get("lang")
 
-    # Запрашиваем минимальный рейтинг
     await update.message.reply_text(
         get_text("rating_prompt", lang),
         reply_markup=ReplyKeyboardMarkup(
@@ -193,7 +194,6 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     text = update.message.text.strip()
 
-    # Убираем +, если есть, и пытаемся получить число
     if text.endswith("+"):
         text = text[:-1]
 
@@ -205,7 +205,6 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text("invalid_rating", lang))
         return CHOOSE_RATING
 
-    # Немного смягчаем фильтр для рейтинга 9 и выше
     min_rating = rating
     if rating >= 9:
         min_rating = 8.5
@@ -243,7 +242,6 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Kļūda izvēloties filmu pēc reitinga: {e}")
         await update.message.reply_text(get_text("not_found", lang))
         return CHOOSE_RATING
-
 
 async def send_movie_with_buttons(update_or_query_message, context, movie, lang):
     reply_text = (
@@ -392,36 +390,53 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "restart":
         await query.message.reply_text(get_text("cancel", lang))
-        # Запускаем старт заново, возвращая состояние выбора "людей"
         return await start(update, context)
 
     else:
         await query.message.reply_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
         return CHOOSE_REPEAT
 
+# ---- Новая функция для вызова Hugging Face API ----
+async def ask_hf_model(prompt: str) -> str:
+    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": 150, "temperature": 0.7},
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise Exception(f"Hugging Face API error {resp.status}: {text}")
+            data = await resp.json()
+            if isinstance(data, list) and "generated_text" in data[0]:
+                return data[0]["generated_text"]
+            else:
+                raise Exception(f"Unexpected response format: {data}")
 
+# ---- Обновлённый обработчик вопросов к ИИ ----
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
-    # ⛔ Проверка, что пользователь действительно нажимал кнопку "ask_ai"
     if not context.user_data.get("waiting_for_ai_question"):
         await update.message.reply_text("Lūdzu, izmanto izvēlnes pogas.")
         return CHOOSE_REPEAT
 
-    # ✅ Снимаем флаг ожидания, чтобы не повторять диалог
     context.user_data["waiting_for_ai_question"] = False
     user_question = update.message.text
 
+    movie = context.user_data.get("last_movie", {})
+    prompt = f"Film: {movie.get('title', 'unknown')}\nQuestion: {user_question}\nAnswer:"
+
     try:
-        movie = context.user_data.get("last_movie", {})
-        response = await ask_ai_about_movie(movie, user_question)
+        response = await ask_hf_model(prompt)
         await update.message.reply_text(response)
     except Exception as e:
         logger.error(f"Kļūda AI atbildē: {e}")
         await update.message.reply_text(get_text("not_found", lang))
 
     return CHOOSE_REPEAT
-
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
@@ -451,4 +466,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-   
