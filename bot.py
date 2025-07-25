@@ -336,7 +336,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 # --- Кастомный фильтр для WAITING_QUESTION ---
-class WaitingForAiFilter(filters.Filter):
+class WaitingForAiFilter(filters):
     async def __call__(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         return context.user_data.get("waiting_for_ai_question", False)
 
