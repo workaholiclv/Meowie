@@ -367,6 +367,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "restart":
         await query.message.reply_text(get_text("cancel", lang))
+        # Запускаем старт заново, возвращая состояние выбора "людей"
         return await start(update, context)
 
     else:
@@ -380,7 +381,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not movie:
             await update.message.reply_text("❗️Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
             context.user_data["waiting_for_ai_question"] = False
-            return ConversationHandler.END
+            return CHOOSE_REPEAT  # Возврат к выбору повторения
 
         title = movie.get("title", "")
         prompt = f"Filma: {title}\nJautājums: {question}\nAtbildi īsi, bet ar interesantiem faktiem."
@@ -407,7 +408,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["waiting_for_ai_question"] = False
 
-        # Вместо повторной отправки фильма — предлагаем основное меню
+        # После ответа AI отправляем ту же кнопку для следующего действия
         keyboard = [[InlineKeyboardButton("🎲 Ieteikt citu filmu", callback_data="repeat")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -416,9 +417,9 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=reply_markup
         )
 
-        return ConversationHandler.END  # <- завершаем разговор корректно
+        return CHOOSE_REPEAT  # Возвращаемся к состоянию выбора дальнейших действий
 
-    return ConversationHandler.END
+    return CHOOSE_REPEAT
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
