@@ -2,8 +2,9 @@ import logging
 import os
 import json
 from dotenv import load_dotenv
+import openai
 import random
-import aiohttp
+import aiohttp  # обязательно!
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -14,26 +15,26 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     CallbackQueryHandler,
+    Filter,
 )
 
-# Импорт твоей функции, немного изменённой под рейтинг
-from trakt_recommendation import get_movies_by_genre_and_people
-
+from trakt_recommendation import get_movies_by_genre_and_people  # твоя функция
 load_dotenv()
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")  # Твой Hugging Face API токен
-HF_MODEL = "facebook/blenderbot-400M-distill"  # Можно заменить на другую чат-модель
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
-if not HF_API_TOKEN:
-    raise ValueError("HF_API_TOKEN nav norādīts Railway vai .env failā")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY nav norādīts Railway vai .env failā")
+
+openai.api_key = OPENAI_API_KEY
+
+CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
 
 LANGUAGES = ["Latviešu", "English"]
 DEFAULT_LANGUAGE = "Latviešu"
@@ -84,8 +85,8 @@ def get_text(key, lang):
             "English": "Choose minimum movie rating:"
         },
         "invalid_rating": {
-            "Latviešu": "Lūdzu, izvēlies derīgu vērtējumu no piedāvātajām opcijām.",
-            "English": "Please choose a valid rating from the options."
+            "Latviešu": "Lūdzu, ievadi derīgu vērtējumu no 0 līdz 10.",
+            "English": "Please enter a valid rating from 0 to 10."
         },
         "not_found": {
             "Latviešu": "Neizdevās atrast filmu. Pamēģini vēlāk.",
@@ -124,13 +125,13 @@ def get_text(key, lang):
 
 def get_random_movie_by_genre(genre, people, min_rating=0):
     movies = get_movies_by_genre_and_people(genre, people)
-
+    
     if not movies:
         logger.warning(f"No movies found for genre={genre}, people={people}")
         return None
 
     filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
-
+    
     logger.info(f"Found {len(filtered)} movies after filtering with min_rating={min_rating} "
                 f"out of {len(movies)} total.")
 
@@ -194,11 +195,8 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     text = update.message.text.strip()
 
-    if text.endswith("+"):
-        text = text[:-1]
-
     try:
-        rating = int(text)
+        rating = int(text.rstrip("+"))  # убираем плюс, если есть
         if rating < 0 or rating > 10:
             raise ValueError("Invalid rating range")
     except ValueError:
@@ -342,17 +340,26 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
+# --- Кастомный фильтр для WAITING_QUESTION ---
+class WaitingForAiFilter(filters.Filter):
+    async def __call__(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        return context.user_data.get("waiting_for_ai_question", False)
+
+waiting_for_ai_filter = WaitingForAiFilter()
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
-if data == "ask_ai":
-    await query.message.reply_text("Lūdzu, uzraksti savu jautājumu par filmu. Es gaidīšu tavu ziņu.")
-    context.user_data["waiting_for_ai_question"] = True
-    # Не возвращай ничего, только ставь флаг
-    return
+    if data == "ask_ai":
+        await query.message.reply_text(
+            "Lūdzu, uzraksti savu jautājumu par filmu. Es gaidīšu tavu ziņu."
+        )
+        context.user_data["waiting_for_ai_question"] = True
+        # Не возвращаем состояние!
+        return
 
     elif data == "repeat_movie":
         genre = context.user_data.get("genre")
@@ -395,25 +402,6 @@ if data == "ask_ai":
         await query.message.reply_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
         return CHOOSE_REPEAT
 
-# ---- Новая функция для вызова Hugging Face API ----
-async def ask_hf_model(prompt: str) -> str:
-    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 150, "temperature": 0.7},
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"Hugging Face API error {resp.status}: {text}")
-            data = await resp.json()
-            if isinstance(data, list) and "generated_text" in data[0]:
-                return data[0]["generated_text"]
-            else:
-                raise Exception(f"Unexpected response format: {data}")
-
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
@@ -429,6 +417,21 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     logger.info(f"User asked AI: {user_question}")
 
+    # Твоя функция для Hugging Face (или OpenAI)
+    async def ask_hf_model(prompt_text):
+        async with aiohttp.ClientSession() as session:
+            API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-large"  # Поставь свою модель
+            headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+            payload = {"inputs": prompt_text}
+            async with session.post(API_URL, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    raise Exception(f"Hugging Face API error: {resp.status}")
+                data = await resp.json()
+                # Формат ответа зависит от модели
+                if isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
+                    return data[0]["generated_text"]
+                return str(data)
+
     try:
         response = await ask_hf_model(prompt)
         await update.message.reply_text(response)
@@ -441,18 +444,18 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
-        CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
-        CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
-        CHOOSE_RATING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_rating)],
-        CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
-        WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
+            CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
+            CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+            CHOOSE_RATING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_rating)],
+            CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
+            WAITING_QUESTION: [MessageHandler(filters.TEXT & waiting_for_ai_filter, handle_ai_question)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("cancel", cancel))
