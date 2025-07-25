@@ -378,9 +378,9 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         question = update.message.text
         movie = context.user_data.get("last_movie")
         if not movie:
-            await update.message.reply_text("❗️ Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
+            await update.message.reply_text("❗️Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
             context.user_data["waiting_for_ai_question"] = False
-            return CHOOSE_REPEAT
+            return ConversationHandler.END
 
         title = movie.get("title", "")
         prompt = f"Filma: {title}\nJautājums: {question}\nAtbildi īsi, bet ar interesantiem faktiem."
@@ -388,7 +388,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.chat.send_action(action="typing")
 
         try:
-            response = await openai.ChatCompletion.acreate(
+            response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "Tu esi kino eksperts."},
@@ -407,15 +407,16 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["waiting_for_ai_question"] = False
 
-        keyboard = [[InlineKeyboardButton("🎲 Jauna filma", callback_data="repeat")]]
+        # Вместо повторной отправки фильма — предлагаем основное меню
+        keyboard = [[InlineKeyboardButton("🎲 Ieteikt citu filmu", callback_data="repeat")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            "Vai vēlies ieteikumu nākamajai filmai?",
+            "❓ Vai vēlies ieteikumu nākamajai filmai?",
             reply_markup=reply_markup
         )
 
-        return CHOOSE_REPEAT
+        return ConversationHandler.END  # <- завершаем разговор корректно
 
     return ConversationHandler.END
 
