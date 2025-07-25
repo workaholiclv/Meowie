@@ -14,7 +14,6 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     CallbackQueryHandler,
-    Filter,
 )
 
 from trakt_recommendation import get_movies_by_genre_and_people  # твоя функция
