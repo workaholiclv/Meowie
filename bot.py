@@ -388,7 +388,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.chat.send_action(action="typing")
 
         try:
-            response = openai.ChatCompletion.create(
+            response = await openai.ChatCompletion.acreate(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "Tu esi kino eksperts."},
@@ -411,7 +411,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         return CHOOSE_REPEAT
 
-    return None
+    return ConversationHandler.END
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
