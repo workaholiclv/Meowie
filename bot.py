@@ -193,6 +193,10 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     text = update.message.text.strip()
 
+    # Убираем +, если есть, и пытаемся получить число
+    if text.endswith("+"):
+        text = text[:-1]
+
     try:
         rating = int(text)
         if rating < 0 or rating > 10:
@@ -201,7 +205,7 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text("invalid_rating", lang))
         return CHOOSE_RATING
 
-    # Если рейтинг 9 или 10 — чуть снижаем фильтр, чтобы находилось хоть что-то
+    # Немного смягчаем фильтр для рейтинга 9 и выше
     min_rating = rating
     if rating >= 9:
         min_rating = 8.5
@@ -239,6 +243,7 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Kļūda izvēloties filmu pēc reitinga: {e}")
         await update.message.reply_text(get_text("not_found", lang))
         return CHOOSE_RATING
+
 
 async def send_movie_with_buttons(update_or_query_message, context, movie, lang):
     reply_text = (
