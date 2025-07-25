@@ -348,12 +348,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
-    if data == "ask_ai":
-        await query.message.reply_text(
-            "Lūdzu, uzraksti savu jautājumu par filmu. Es gaidīšu tavu ziņu."
-        )
-        context.user_data["waiting_for_ai_question"] = True
-        return WAITING_QUESTION
+if data == "ask_ai":
+    await query.message.reply_text("Lūdzu, uzraksti savu jautājumu par filmu. Es gaidīšu tavu ziņu.")
+    context.user_data["waiting_for_ai_question"] = True
+    # Не возвращай ничего, только ставь флаг
+    return
 
     elif data == "repeat_movie":
         genre = context.user_data.get("genre")
@@ -415,7 +414,6 @@ async def ask_hf_model(prompt: str) -> str:
             else:
                 raise Exception(f"Unexpected response format: {data}")
 
-# ---- Обновлённый обработчик вопросов к ИИ ----
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
@@ -429,6 +427,8 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
     movie = context.user_data.get("last_movie", {})
     prompt = f"Film: {movie.get('title', 'unknown')}\nQuestion: {user_question}\nAnswer:"
 
+    logger.info(f"User asked AI: {user_question}")
+
     try:
         response = await ask_hf_model(prompt)
         await update.message.reply_text(response)
@@ -441,18 +441,18 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
-            CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
-            CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
-            CHOOSE_RATING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_rating)],
-            CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
-            WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start)],
+    states={
+        CHOOSE_PEOPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_people)],
+        CHOOSE_GENRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_genre)],
+        CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+        CHOOSE_RATING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_rating)],
+        CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
+        WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("cancel", cancel))
