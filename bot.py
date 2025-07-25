@@ -407,15 +407,15 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         context.user_data["waiting_for_ai_question"] = False
 
-keyboard = [[InlineKeyboardButton("🎲 Jauna filma", callback_data="repeat")]]
-reply_markup = InlineKeyboardMarkup(keyboard)
+        keyboard = [[InlineKeyboardButton("🎲 Jauna filma", callback_data="repeat")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-await update.message.reply_text(
-    "Vai vēlies ieteikumu nākamajai filmai?",
-    reply_markup=reply_markup
-)
+        await update.message.reply_text(
+            "Vai vēlies ieteikumu nākamajai filmai?",
+            reply_markup=reply_markup
+        )
 
-return CHOOSE_REPEAT
+        return CHOOSE_REPEAT
 
     return ConversationHandler.END
 
