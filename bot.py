@@ -394,9 +394,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Nezināma izvēle. Lūdzu, mēģini vēlreiz.")
         return CHOOSE_REPEAT
 
+
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
-    user_question = update.message.textasync def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
     # ⛔ Проверка, что пользователь действительно нажимал кнопку "ask_ai"
@@ -417,6 +416,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(get_text("not_found", lang))
 
     return CHOOSE_REPEAT
+
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
