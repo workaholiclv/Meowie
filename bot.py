@@ -127,7 +127,24 @@ def get_random_movie_by_genre(genre, people, min_rating=0):
     filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
     if not filtered:
         return None
-    return random.choice(filtered)
+    return random.choice(filtered)def get_random_movie_by_genre(genre, people, min_rating=0):
+    movies = get_movies_by_genre_and_people(genre, people)
+    
+    if not movies:
+        logger.warning(f"No movies found for genre={genre}, people={people}")
+        return None
+
+    filtered = [m for m in movies if m.get("rating", 0) >= min_rating]
+    
+    logger.info(f"Found {len(filtered)} movies after filtering with min_rating={min_rating} "
+                f"out of {len(movies)} total.")
+
+    # Если ничего не найдено — ослабим фильтр и предупредим
+    if not filtered and min_rating > 0:
+        logger.info(f"No movies found with rating >= {min_rating}. Trying without rating filter.")
+        return random.choice(movies)
+
+    return random.choice(filtered) if filtered else None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["lang"] = DEFAULT_LANGUAGE
@@ -181,44 +198,55 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CHOOSE_RATING
 
 async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    rating_text = update.message.text
-    lang = context.user_data.get("lang")
-    people = context.user_data.get("people")
-    genre = context.user_data.get("genre")
-    time_ = context.user_data.get("time")
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    text = update.message.text.strip()
 
     try:
-        min_rating = int(rating_text.rstrip("+"))
+        rating = int(text)
+        if rating < 0 or rating > 10:
+            raise ValueError("Invalid rating range")
     except ValueError:
-        await update.message.reply_text(get_text("choose_repeat_invalid", lang))
+        await update.message.reply_text(get_text("invalid_rating", lang))
         return CHOOSE_RATING
+
+    # Если рейтинг 9 или 10 — чуть снижаем фильтр, чтобы находилось хоть что-то
+    min_rating = rating
+    if rating >= 9:
+        min_rating = 8.5
 
     context.user_data["min_rating"] = min_rating
 
-    movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+    genre = context.user_data.get("genre")
+    people = context.user_data.get("people")
 
-    if not movie:
+    try:
+        movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+        if not movie:
+            await update.message.reply_text(get_text("not_found", lang))
+            return CHOOSE_RATING
+
+        context.user_data["last_movie"] = movie
+
+        user_id = str(update.effective_user.id)
+        history = load_history()
+        history.setdefault(user_id, []).append({
+            "title": movie["title"],
+            "year": movie["year"],
+            "url": movie["trakt_url"],
+            "people": people,
+            "genre": genre,
+            "time": context.user_data.get("time", ""),
+            "min_rating": min_rating
+        })
+        save_history(history)
+
+        await send_movie_with_buttons(update.message, context, movie, lang)
+        return CHOOSE_REPEAT
+
+    except Exception as e:
+        logger.error(f"Kļūda izvēloties filmu pēc reitinga: {e}")
         await update.message.reply_text(get_text("not_found", lang))
-        return ConversationHandler.END
-
-    context.user_data["last_movie"] = movie
-
-    user_id = str(update.effective_user.id)
-    history = load_history()
-    history.setdefault(user_id, []).append({
-        "title": movie["title"],
-        "year": movie["year"],
-        "url": movie["trakt_url"],
-        "people": people,
-        "genre": genre,
-        "time": time_,
-        "min_rating": min_rating
-    })
-    save_history(history)
-
-    await send_movie_with_buttons(update.message, context, movie, lang)
-
-    return CHOOSE_REPEAT
+        return CHOOSE_RATING
 
 async def send_movie_with_buttons(update_or_query_message, context, movie, lang):
     reply_text = (
@@ -375,49 +403,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHOOSE_REPEAT
 
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("waiting_for_ai_question"):
-        question = update.message.text
-        movie = context.user_data.get("last_movie")
-        if not movie:
-            await update.message.reply_text("❗️Nav neviena filma, par ko varētu jautāt. Lūdzu, vispirms izvēlies filmu.")
-            context.user_data["waiting_for_ai_question"] = False
-            return CHOOSE_REPEAT  # Возврат к выбору повторения
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    user_question = update.message.textasync def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
 
-        title = movie.get("title", "")
-        prompt = f"Filma: {title}\nJautājums: {question}\nAtbildi īsi, bet ar interesantiem faktiem."
+    # ⛔ Проверка, что пользователь действительно нажимал кнопку "ask_ai"
+    if not context.user_data.get("waiting_for_ai_question"):
+        await update.message.reply_text("Lūdzu, izmanto izvēlnes pogas.")
+        return CHOOSE_REPEAT
 
-        await update.message.chat.send_action(action="typing")
+    # ✅ Снимаем флаг ожидания, чтобы не повторять диалог
+    context.user_data["waiting_for_ai_question"] = False
+    user_question = update.message.text
 
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Tu esi kino eksperts."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=500,
-                temperature=0.7,
-            )
-
-            answer = response["choices"][0]["message"]["content"]
-            await update.message.reply_text(f"🎬 {title} — atbilde uz jautājumu:\n\n{answer}")
-
-        except Exception as e:
-            await update.message.reply_text("❌ Neizdevās iegūt informāciju no AI.")
-            logger.error(f"AI kļūda: {e}")
-
-        context.user_data["waiting_for_ai_question"] = False
-
-        # После ответа AI отправляем ту же кнопку для следующего действия
-        keyboard = [[InlineKeyboardButton("🎲 Ieteikt citu filmu", callback_data="repeat")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "❓ Vai vēlies ieteikumu nākamajai filmai?",
-            reply_markup=reply_markup
-        )
-
-        return CHOOSE_REPEAT  # Возвращаемся к состоянию выбора дальнейших действий
+    try:
+        movie = context.user_data.get("last_movie", {})
+        response = await ask_ai_about_movie(movie, user_question)
+        await update.message.reply_text(response)
+    except Exception as e:
+        logger.error(f"Kļūda AI atbildē: {e}")
+        await update.message.reply_text(get_text("not_found", lang))
 
     return CHOOSE_REPEAT
 
