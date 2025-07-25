@@ -2,7 +2,6 @@ import logging
 import os
 import json
 from dotenv import load_dotenv
-import openai
 import random
 import aiohttp  # обязательно!
 
@@ -22,14 +21,11 @@ from trakt_recommendation import get_movies_by_genre_and_people  # твоя фу
 load_dotenv()
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY nav norādīts Railway vai .env failā")
 
-openai.api_key = OPENAI_API_KEY
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION = range(6)
 
@@ -417,7 +413,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     logger.info(f"User asked AI: {user_question}")
 
-    # Твоя функция для Hugging Face (или OpenAI)
+    # Твоя функция для Hugging Face 
     async def ask_hf_model(prompt_text):
         async with aiohttp.ClientSession() as session:
             API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-large"  # Поставь свою модель
