@@ -226,7 +226,7 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     people = context.user_data.get("people")
 
     try:
-        movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+        movie = await get_random_movie_by_genre(genre, people, min_rating=min_rating)
         if not movie:
             await update.message.reply_text(get_text("not_found", lang))
             return CHOOSE_RATING
@@ -270,7 +270,7 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         people = context.user_data.get("people")
         min_rating = context.user_data.get("min_rating", 0)
         try:
-            movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+            movie = await get_random_movie_by_genre(genre, people, min_rating=min_rating)
             if not movie:
                 await update.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
@@ -377,7 +377,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         people = context.user_data.get("people")
         min_rating = context.user_data.get("min_rating", 0)
         try:
-            movie = get_random_movie_by_genre(genre, people, min_rating=min_rating)
+            movie = await get_random_movie_by_genre(genre, people, min_rating=min_rating)
             if not movie:
                 await query.message.reply_text(get_text("not_found", lang))
                 return ConversationHandler.END
