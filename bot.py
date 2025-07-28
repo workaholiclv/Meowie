@@ -117,8 +117,8 @@ def get_text(key, lang):
     }
     return texts[key].get(lang, texts[key][DEFAULT_LANGUAGE])
 
-def get_random_movie_by_genre(genre, people, min_rating=0):
-    movies = get_movies_by_genre_and_people(genre, people)
+async def get_random_movie_by_genre(genre, people, min_rating=0):
+    movies = await get_movies_by_genre_and_people(genre, people)
     
     if not movies:
         logger.warning(f"No movies found for genre={genre}, people={people}")
@@ -234,7 +234,7 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["last_movie"] = movie
 
         user_id = str(update.effective_user.id)
-        history = load_history()
+        history = await load_history()
         history.setdefault(user_id, []).append({
             "title": movie.get("title", "Unknown"),
             "year": movie.get("year", "----"),
@@ -244,7 +244,7 @@ async def choose_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "time": context.user_data.get("time", ""),
             "min_rating": min_rating
         })
-        save_history(history)
+        await save_history(history)
 
         await send_movie_with_buttons(update.message, context, movie, lang)
         return CHOOSE_REPEAT
@@ -278,7 +278,7 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["last_movie"] = movie
 
             user_id = str(update.effective_user.id)
-            history = load_history()
+            history = await load_history()
             history.setdefault(user_id, []).append({
                 "title": movie["title"],
                 "year": movie["year"],
@@ -288,7 +288,7 @@ async def choose_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "time": context.user_data.get("time", ""),
                 "min_rating": min_rating
             })
-            save_history(history)
+            await save_history(history)
 
             await send_movie_with_buttons(update.message, context, movie, lang)
 
@@ -347,14 +347,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
-    history = load_history().get(user_id, [])
+    history = await load_history()  # await добавлен
+    user_history = history.get(user_id, [])
 
-    if not history:
+    if not user_history:
         await update.message.reply_text(get_text("history_empty", lang))
         return
 
     lines = []
-    for item in history[-5:]:
+    for item in user_history[-5:]:
         lines.append(f"{item['title']} ({item['year']}) - {item['genre']} - {item['people']} - {item['time']}")
     await update.message.reply_text("\n".join(lines))
 
@@ -384,7 +385,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["last_movie"] = movie
 
             user_id = str(query.from_user.id)
-            history = load_history()
+            history = await load_history()
             history.setdefault(user_id, []).append({
                 "title": movie["title"],
                 "year": movie["year"],
@@ -394,7 +395,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "time": context.user_data.get("time", ""),
                 "min_rating": min_rating
             })
-            save_history(history)
+            await save_history(history)
 
             await send_movie_with_buttons(query.message, context, movie, lang)
             return CHOOSE_REPEAT
@@ -472,21 +473,27 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return LANG_SELECTION
 
-def load_history():
-    if not os.path.exists(HISTORY_FILE):
+history_lock = asyncio.Lock()
+
+async def load_history():
+    async with history_lock:
         try:
-            with open(HISTORY_FILE, 'w') as f:
-                json.dump({}, f)
+            if not os.path.exists(HISTORY_FILE):
+                with open(HISTORY_FILE, 'w') as f:
+                    json.dump({}, f)
+            with open(HISTORY_FILE, 'r') as f:
+                return json.load(f)
         except Exception as e:
-            logger.error(f"Cannot create history file: {e}")
+            logger.error(f"Cannot load history: {e}")
             return {}
 
-    try:
-        with open(HISTORY_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Cannot load history: {e}")
-        return {}      
+async def save_history(data):
+    async with history_lock:
+        try:
+            with open(HISTORY_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"History save failed: {e}")    
 
 def main():
     logger.info("Запуск бота...")
@@ -513,9 +520,9 @@ def main():
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("Meowie ieskrējis čatā!", flush=True)
+    print("Meowie ieskrējis čatā!")
+    app.run_polling()
 
-    try:
-        app.run_polling()
-    except Exception as e:
-        logger.error(f"Ошибка запуска бота: {e}")
+if __name__ == "__main__":
+    main()
+   
