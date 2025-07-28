@@ -15,7 +15,7 @@ HEADERS = {
     "trakt-api-key": TRAKT_CLIENT_ID,
 }
 
-def get_movies_by_genre_and_people(genre, people_type="Viens"):
+async def get_movies_by_genre_and_people(genre, people_type="Viens"):
     """
     Получаем список популярных фильмов по жанру.
     people_type — пока не используется, но можно расширить логику.
