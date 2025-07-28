@@ -4,8 +4,9 @@ import json
 from dotenv import load_dotenv
 import random
 import aiohttp  # обязательно!
-import fcntl
 import asyncio
+import sys
+sys.stdout.reconfigure(line_buffering=True)
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -52,15 +53,12 @@ RATING_OPTIONS = ["5+", "6+", "7+", "8+", "9+"]
 
 HISTORY_FILE = "user_history.json"
 
-if not os.path.exists(HISTORY_FILE):
-    with open(HISTORY_FILE, 'w') as f:
-        json.dump({}, f)
-
 def save_history(data):
-    tmp_file = HISTORY_FILE + ".tmp"
-    with open(tmp_file, 'w') as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp_file, HISTORY_FILE)
+    try:
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"History save failed: {e}")
 
 def get_text(key, lang):
     texts = {
@@ -475,13 +473,20 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return LANG_SELECTION
 
 def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'w') as f:
+                json.dump({}, f)
+        except Exception as e:
+            logger.error(f"Cannot create history file: {e}")
+            return {}
+
     try:
         with open(HISTORY_FILE, 'r') as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Cannot load history: {e}")
-        return {}
-        
+        return {}      
 
 def main():
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
@@ -497,14 +502,17 @@ def main():
             CHOOSE_REPEAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_repeat)],
             WAITING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_question)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],  # Вот сюда обязательно добавить
+        fallbacks=[CommandHandler("cancel", cancel)],
     )
 
     app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("cancel", cancel))  # И сюда тоже
+    app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("language", set_language))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("Meowie ieskrējis čatā!")
-    app.run_polling()
+    print("Meowie ieskrējis čatā!", flush=True)
+    try:
+        app.run_polling()
+    except Exception as e:
+        logger.error(f"Ошибка запуска бота: {e}")
