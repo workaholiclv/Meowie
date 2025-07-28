@@ -489,6 +489,8 @@ def load_history():
         return {}      
 
 def main():
+    logger.info("Запуск бота...")
+
     app = ApplicationBuilder().token(TG_BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -512,6 +514,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback))
 
     print("Meowie ieskrējis čatā!", flush=True)
+
     try:
         app.run_polling()
     except Exception as e:
