@@ -57,10 +57,10 @@ if not os.path.exists(HISTORY_FILE):
         json.dump({}, f)
 
 def save_history(data):
-    with open(HISTORY_FILE, 'w') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    tmp_file = HISTORY_FILE + ".tmp"
+    with open(tmp_file, 'w') as f:
         json.dump(data, f, indent=2)
-        fcntl.flock(f, fcntl.LOCK_UN)
+    os.replace(tmp_file, HISTORY_FILE)
 
 def get_text(key, lang):
     texts = {
