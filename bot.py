@@ -25,9 +25,9 @@ TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 if not TG_BOT_TOKEN:
     raise ValueError("TG_BOT_TOKEN nav norādīts Railway vai .env failā")
 
-HF_API_KEY = os.getenv("HF_API_KEY")
-if not HF_API_KEY:
-    raise ValueError("HF_API_KEY nav norādīts Railway vai .env failā")
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+if not HF_API_TOKEN:
+    raise ValueError("HF_API_TOKEN nav norādīts Railway vai .env failā")
 
 CHOOSE_PEOPLE, CHOOSE_GENRE, CHOOSE_TIME, CHOOSE_RATING, CHOOSE_REPEAT, WAITING_QUESTION, LANG_SELECTION = range(7)
 
@@ -437,7 +437,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # 👉 ВЫНЕСИ ЭТУ ФУНКЦИЮ НИЖЕ, БЕЗ ДОП. ОТСТУПОВ
 async def ask_hf_model(prompt_text):
     API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-large"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
     payload = {"inputs": prompt_text}
 
     timeout = aiohttp.ClientTimeout(total=10)
